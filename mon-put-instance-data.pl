@@ -32,7 +32,8 @@ Description of available options:
   --disk-space-used   Reports allocated disk space in gigabytes.
   --disk-space-avail  Reports available disk space in gigabytes.
   --load-average      Reports load average per cpu core
-  --cpu-detail        Reports detailed information on the usage % of each core
+  --cpu-detail        Reports detalied average usage of each core since last run
+  --network-util      Reports detailed average tarffic of each interface since last run
   
   --aggregated[=only]    Adds aggregated metrics for instance type, AMI id, and overall.
   --auto-scaling[=only]  Adds aggregated metrics for Auto Scaling group.
@@ -108,6 +109,7 @@ my $report_disk_used;
 my $report_disk_avail;
 my $load_average_option;
 my $cpu_detail_option;
+my $network_util_option;
 my $mem_used_incl_cache_buff;
 my @mount_path;
 my $mem_units;
@@ -129,6 +131,7 @@ my $aws_iam_role;
 my $parse_result = 1;
 my $parse_error = '';
 my $argv_size = @ARGV;
+my $temp_metric_name;
 
 {
   # Capture warnings from GetOptions
@@ -148,6 +151,7 @@ my $argv_size = @ARGV;
     'disk-space-avail' => \$report_disk_avail,
     'load-average' => \$load_average_option,
     'cpu-detail' => \$cpu_detail_option,
+    'network-util' \$network_util_option,
     'auto-scaling:s' => \$auto_scaling,
     'aggregated:s' => \$aggregated,
     'memory-units:s' => \$mem_units,
@@ -495,7 +499,6 @@ if ($cpu_detail_option){
   my $total;
   my $temp_file = "/tmp/cpu_statistics.tmp";
   my $command_string;
-  my $temp_metric_name;
   #if there is  file with old data we import it, if not then there will be no data added this run
   if (-e "$opt_t"){
     @old_cores= (`cat $opt_t`);
@@ -546,6 +549,74 @@ if ($cpu_detail_option){
   #now we create new .tmp file
   $command_string = ("cat /proc/stat |grep cpu \> $temp_file");
   system($command_string);
+}
+
+if ($network_util_option){
+  my @ointerfaces;
+  my @tinterfaces;
+  my $RX_BPS;
+  my $RX_PPS;
+  my $RX_EPS;
+  my $RX_MPS;
+  my $TX_BPS;
+  my $TX_PPS;
+  my $TX_EPS;
+  my $interfacename;
+  my $opt_t = "/tmp/network_statistics.tmp";  
+  my $currenttime;
+  my $lastchecktime;
+  my $deltatime;
+  my $commandstring;
+  #First we get the current time
+  $currenttime = time();
+  #Second we need to check if there is history file in /tmp/.If so then we pull in the data
+  if (-e "$opt_t"){
+    $lastchecktime = (`cat $opt_t |grep time |awk \'{print \$2}\'`);
+    chomp ($lastchecktime);
+    $deltatime=($currenttime - $lastchecktime);
+    @ointerfaces= (`cat $opt_t`);
+    ## Now we pull the current data and write it to the tmp file. 
+    @tinterfaces= (`cat /proc/net/dev |grep : |awk -F : \'{print \$1" "\$2}\'|awk \'{print \$1" "\$2" "\$3" "\$4" "\$9" "\$10" "\$11" "\$12}\'`);
+    foreach my $interface (@tinterfaces){
+      foreach my $oldinterface (@ointerfaces){
+        if (((split(" ",$interface))[0]) eq ((split(" ",$oldinterface))[0])){
+          $interfacename = (split(" ",$interface))[0];
+          $RX_BPS = ((split(" ",$interface))[1] - (split(" ",$oldinterface))[1]) / $deltatime;
+          $RX_PPS = ((split(" ",$interface))[2] - (split(" ",$oldinterface))[2]) / $deltatime;
+          $RX_EPS = ((split(" ",$interface))[3] - (split(" ",$oldinterface))[3]) / $deltatime;
+          $RX_MPS = ((split(" ",$interface))[4] - (split(" ",$oldinterface))[4]) / $deltatime;
+          $TX_BPS = ((split(" ",$interface))[5] - (split(" ",$oldinterface))[5]) / $deltatime;
+          $TX_PPS = ((split(" ",$interface))[6] - (split(" ",$oldinterface))[6]) / $deltatime;
+          $TX_EPS = ((split(" ",$interface))[7] - (split(" ",$oldinterface))[7]) / $deltatime;
+          #Now we add the metrics we just calculated
+          $temp_metric_name = ""$interfacename."_ReceivedBytesPerSecond";
+          addmetric('$temp_metric_name', 'Bytes/Second', $RX_BPS);
+          $temp_metric_name = ""$interfacename."_ReceivedPacketsPerSecond";
+          addmetric('$temp_metric_name', 'Count/Second', $RX_PPS);
+          $temp_metric_name = ""$interfacename."_ReceivedErrorsPerSecond";
+          addmetric('$temp_metric_name', 'Count/Second', $RX_EPS);
+          temp_metric_name = ""$interfacename."_ReceivedMulticastPerSecond";
+          addmetric('$temp_metric_name', 'Count/Second', $RX_MPS);
+          temp_metric_name = ""$interfacename."_TransmittedBytesPerSecond";
+          addmetric('$temp_metric_name', 'Bytes/Second', $TX_BPS);
+          $temp_metric_name = ""$interfacename."_TransmittedPacketsPerSecond";
+          addmetric('$temp_metric_name', 'Count/Second', $TX_PPS);
+          $temp_metric_name = ""$interfacename."_TransmittedErrorsPerSecond";
+          addmetric('$temp_metric_name', 'Count/Second', $TX_EPS);
+        }  
+      }
+    }
+  ## Next we write the data to the tmp file
+  #First we wipe out the old file
+  $commandstring = ("/bin/rm -f $opt_t");
+  system ($commandstring);
+  #Next we populate the string
+  }
+  $commandstring = ("/bin/echo \'time $currenttime\' \>\> $opt_t");
+  system ($commandstring);
+  $commandstring = ("cat /proc/net/dev |grep :|awk -F : \'{print \$1\" \"\$2}\'|awk \'{print \$1\" \"\$2\" \"\$3\" \"\$4\" \"\$9\" \"\$10\" \"\$11\" \"\$12}\' \>\> $opt_t");
+  #print ("$commandstring\n");
+  system ($commandstring);
 }
 
 # send metrics over to CloudWatch if any
