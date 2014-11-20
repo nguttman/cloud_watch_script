@@ -32,6 +32,7 @@ Description of available options:
   --disk-space-used   Reports allocated disk space in gigabytes.
   --disk-space-avail  Reports available disk space in gigabytes.
   --load-average      Reports load average per cpu core
+  --cpu-detail        Reports detailed information on the usage % of each core
   
   --aggregated[=only]    Adds aggregated metrics for instance type, AMI id, and overall.
   --auto-scaling[=only]  Adds aggregated metrics for Auto Scaling group.
@@ -106,6 +107,7 @@ my $report_disk_util;
 my $report_disk_used;
 my $report_disk_avail;
 my $load_average_option;
+my $cpu_detail_option;
 my $mem_used_incl_cache_buff;
 my @mount_path;
 my $mem_units;
@@ -145,6 +147,7 @@ my $argv_size = @ARGV;
     'disk-space-used' => \$report_disk_used,
     'disk-space-avail' => \$report_disk_avail,
     'load-average' => \$load_average_option,
+    'cpu-detail' => \$cpu_detail_option,
     'auto-scaling:s' => \$auto_scaling,
     'aggregated:s' => \$aggregated,
     'memory-units:s' => \$mem_units,
@@ -477,6 +480,10 @@ sub __get_load_average {
     return wantarray ? @load_averages : shift @load_averages;
 }
 
+if ($cpu_detail_option){
+  
+  
+}
 
 # send metrics over to CloudWatch if any
 
