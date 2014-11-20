@@ -481,8 +481,71 @@ sub __get_load_average {
 }
 
 if ($cpu_detail_option){
-  
-  
+  my @old_cores;
+  my @new_cores;
+  my $used;
+  my $system;
+  my $user;
+  my $nice;
+  my $iowait;
+  my $irq;
+  my $softirq;
+  my $idle;
+  my $cpu_name;
+  my $total;
+  my $temp_file = "/tmp/cpu_statistics.tmp";
+  my $command_string;
+  my $temp_metric_name;
+  #if there is  file with old data we import it, if not then there will be no data added this run
+  if (-e "$opt_t"){
+    @old_cores= (`cat $opt_t`);
+    @new_cores= `cat /proc/stat |grep cpu`;
+    foreach my $current_cpu (@new_cores){
+      foreach my $old_cpu (@old_cores){
+      if (((split(" ",$current_cpu))[0]) eq ((split(" ",$old_cpu))[0])){
+        #These intial values are wrong and will be corrected
+        $cpu_name = (split(" ",$current_cpu))[0];
+        $user = ((split(" ",$current_cpu))[1] - (split(" ",$old_cpu))[1]);
+        $nice = ((split(" ",$current_cpu))[2] - (split(" ",$old_cpu))[2]);
+        $system = ((split(" ",$current_cpu))[3] - (split(" ",$old_cpu))[3]);
+        $idle = ((split(" ",$current_cpu))[4] - (split(" ",$old_cpu))[4]);
+        $iowait = ((split(" ",$current_cpu))[5] - (split(" ",$old_cpu))[5]);
+        $irq = ((split(" ",$current_cpu))[6] - (split(" ",$old_cpu))[6]);
+        $softirq = ((split(" ",$current_cpu))[7] - (split(" ",$old_cpu))[7]);
+        $used = ($user + $nice + $system + $idle + $iowait + $irq + $softirq);
+        #this is the total CPU time that has passded
+        $total = ($used + $idle);
+        #Now we correct the values
+        $user = ($user / $total) * 100;
+        $nice = ($nice / $total) * 100;
+        $system = ($system / $total) * 100;
+        $iowait = ($iowait / $total) * 100;
+        $irq = ($irq / $total) * 100;
+        $softirq = ($softirq / $total) * 100;
+        $used = ($used / $total) * 100;
+        #Time to add the metrics
+        $temp_metric_name = "$cpu_name"."_user";
+        addmetric('$temp_metric_name', 'Percent', $user);
+        $temp_metric_name = "$cpu_name"."_nice";
+        addmetric('$temp_metric_name', 'Percent', $nice);
+        $temp_metric_name = "$cpu_name"."_system";
+        addmetric('$temp_metric_name', 'Percent', $system);
+        $temp_metric_name = "$cpu_name"."_iowait";
+        addmetric('$temp_metric_name', 'Percent', $iowait);
+        $temp_metric_name = "$cpu_name"."_irq";
+        addmetric('$temp_metric_name', 'Percent', $irq);
+        $temp_metric_name = "$cpu_name"."_soft_irq";
+        addmetric('$temp_metric_name', 'Percent', $irq);
+        $temp_metric_name = "$cpu_name"."_used";
+        addmetric('$temp_metric_name', 'Percent', $used);
+      }
+    }
+    #Lastly we remove the old .tmp file
+    $command_string = ("/bin/rm -f $temp_file");
+  }
+  #now we create new .tmp file
+  $command_string = ("cat /proc/stat |grep cpu \> $temp_file");
+  system($command_string);
 }
 
 # send metrics over to CloudWatch if any
